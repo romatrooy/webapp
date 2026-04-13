@@ -1,12 +1,14 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:webapp/data/app_database.dart';
 
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final database = AppDatabase();
+  runApp(MyApp(database: database));
 }
 
-/// Палитра близкая к прототипу
 class AppColors {
   AppColors._();
 
@@ -25,20 +27,24 @@ class AppColors {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.database});
+
+  final AppDatabase database;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true),
-      home: const MainScreen(),
+      home: MainScreen(database: database),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, required this.database});
+
+  final AppDatabase database;
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -46,23 +52,56 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 1;
+  bool _isDbReady = false;
 
-  late final List<Widget> _screens = [
-    const MapScreen(),
-    const WeatherScreen(),
-    const CityListScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initDb();
+  }
+
+  Future<void> _initDb() async {
+    await widget.database.seedMasterCitiesIfEmpty();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isDbReady = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.database.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    if (!_isDbReady) {
+      return const Scaffold(
+        backgroundColor: AppColors.turquoiseBg,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.turquoiseBg,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Positioned.fill(child: _screens[_currentIndex]),
+          Positioned.fill(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                const MapScreen(),
+                WeatherScreen(database: widget.database),
+                CityListScreen(database: widget.database),
+              ],
+            ),
+          ),
           Positioned(
             left: 20,
             right: 20,
@@ -87,7 +126,6 @@ class CustomBottomNav extends StatelessWidget {
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
-
   static const _labels = ['Карта', 'Погода', 'Город'];
 
   @override
@@ -160,34 +198,25 @@ class CustomBottomNav extends StatelessWidget {
   }
 }
 
-// ---------------- WEATHER SCREEN ----------------
+class WeatherScreen extends StatefulWidget {
+  const WeatherScreen({super.key, required this.database});
 
-class _ForecastItem {
-  const _ForecastItem(this.day, this.low, this.high, this.icon);
+  final AppDatabase database;
 
-  final String day;
-  final String low;
-  final String high;
-  final IconData icon;
+  @override
+  State<WeatherScreen> createState() => _WeatherScreenState();
 }
 
-class WeatherScreen extends StatelessWidget {
-  const WeatherScreen({super.key});
-
-  static const _forecast = <_ForecastItem>[
-    _ForecastItem('Сегодня', '-31°', '-22°', Icons.cloudy_snowing),
-    _ForecastItem('Пн', '-31°', '-22°', Icons.wb_cloudy_outlined),
-    _ForecastItem('Вт', '-28°', '-18°', Icons.wb_sunny_outlined),
-    _ForecastItem('Ср', '-30°', '-20°', Icons.ac_unit),
-    _ForecastItem('Чт', '-27°', '-17°', Icons.grain),
-    _ForecastItem('Пт', '-29°', '-19°', Icons.thunderstorm_outlined),
-    _ForecastItem('Сб', '-26°', '-16°', Icons.wb_cloudy_outlined),
-    _ForecastItem('Вс', '-25°', '-15°', Icons.wb_sunny_outlined),
-    _ForecastItem('Пн', '-24°', '-14°', Icons.cloudy_snowing),
-    _ForecastItem('Вт', '-23°', '-13°', Icons.wb_cloudy_outlined),
-  ];
-
+class _WeatherScreenState extends State<WeatherScreen> {
   static const _navClearance = 88.0;
+  final PageController _pageController = PageController();
+  int _currentCityPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -203,166 +232,209 @@ class WeatherScreen extends StatelessWidget {
         bottom: false,
         child: Padding(
           padding: const EdgeInsets.only(bottom: _navClearance),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Text(
-                'Выбранное место',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Москва',
-                style: TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '-24°',
-                style: TextStyle(
-                  fontSize: 64,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.white,
-                  height: 1.05,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(30),
-                      gradient: const LinearGradient(
-                        colors: [AppColors.forecastCardTop, AppColors.forecastCardBottom],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+          child: StreamBuilder<List<UserCityWithName>>(
+            stream: widget.database.watchUserCities(),
+            builder: (context, snapshot) {
+              final selectedCities = snapshot.data ?? const <UserCityWithName>[];
+              final cities = selectedCities.isEmpty
+                  ? const ['Москва']
+                  : selectedCities.map((c) => c.name).toList();
+              final tabsCount = cities.length;
+              if (_currentCityPage >= tabsCount) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    _currentCityPage = tabsCount - 1;
+                  });
+                  _pageController.jumpToPage(tabsCount - 1);
+                });
+              }
+
+              return Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Text(
+                    'Выбранное место',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withValues(alpha: 0.92),
+                      fontWeight: FontWeight.w500,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.calendar_month_outlined,
-                                color: Colors.white.withValues(alpha: 0.95),
-                                size: 22,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    cities[_currentCityPage.clamp(0, tabsCount - 1)],
+                    style: const TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '-24°',
+                    style: TextStyle(
+                      fontSize: 64,
+                      fontWeight: FontWeight.w300,
+                      color: Colors.white,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: tabsCount,
+                      onPageChanged: (index) {
+                        setState(() {
+                          _currentCityPage = index;
+                        });
+                      },
+                      itemBuilder: (context, pageIndex) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(30),
+                              gradient: const LinearGradient(
+                                colors: [AppColors.forecastCardTop, AppColors.forecastCardBottom],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
                               ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Прогноз на 10 дней',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white.withValues(alpha: 0.98),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.12),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: Colors.white.withValues(alpha: 0.22),
-                        ),
-                        Expanded(
-                          child: ListView.separated(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            itemCount: _forecast.length,
-                            separatorBuilder: (_, __) => Divider(
-                              height: 1,
-                              thickness: 0.5,
-                              color: Colors.white.withValues(alpha: 0.15),
+                              ],
                             ),
-                            itemBuilder: (context, index) {
-                              final item = _forecast[index];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 76,
-                                      child: Text(
-                                        item.day,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w500,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_month_outlined,
+                                        color: Colors.white.withValues(alpha: 0.95),
+                                        size: 22,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        'Прогноз на 10 дней',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white.withValues(alpha: 0.98),
                                         ),
                                       ),
-                                    ),
-                                    Icon(item.icon, color: Colors.white, size: 22),
-                                    const Spacer(),
-                                    Text(
-                                      item.low,
-                                      style: const TextStyle(color: Colors.white, fontSize: 15),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Text(
-                                      item.high,
-                                      style: const TextStyle(color: Colors.white, fontSize: 15),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              );
-                            },
+                                Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                ),
+                                Expanded(
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    itemCount: 10,
+                                    separatorBuilder: (_, __) => Divider(
+                                      height: 1,
+                                      thickness: 0.5,
+                                      color: Colors.white.withValues(alpha: 0.15),
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      const days = [
+                                        'Сегодня',
+                                        'Пн',
+                                        'Вт',
+                                        'Ср',
+                                        'Чт',
+                                        'Пт',
+                                        'Сб',
+                                        'Вс',
+                                        'Пн',
+                                        'Вт',
+                                      ];
+                                      final icons = [
+                                        Icons.cloudy_snowing,
+                                        Icons.wb_cloudy_outlined,
+                                        Icons.wb_sunny_outlined,
+                                        Icons.ac_unit,
+                                        Icons.grain,
+                                        Icons.thunderstorm_outlined,
+                                        Icons.wb_cloudy_outlined,
+                                        Icons.wb_sunny_outlined,
+                                        Icons.cloudy_snowing,
+                                        Icons.wb_cloudy_outlined,
+                                      ];
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        child: Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 76,
+                                              child: Text(
+                                                days[index],
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(icons[index], color: Colors.white, size: 22),
+                                            const Spacer(),
+                                            const Text('-31°', style: TextStyle(color: Colors.white, fontSize: 15)),
+                                            const SizedBox(width: 16),
+                                            const Text('-22°', style: TextStyle(color: Colors.white, fontSize: 15)),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      tabsCount.clamp(1, 8),
+                      (index) => Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.symmetric(horizontal: 5),
+                        decoration: BoxDecoration(
+                          color: index == _currentCityPage
+                              ? Colors.black87
+                              : Colors.black.withValues(alpha: 0.22),
+                          shape: BoxShape.circle,
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.black87,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.22),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
+                  const SizedBox(height: 8),
                 ],
-              ),
-              const SizedBox(height: 8),
-            ],
+              );
+            },
           ),
         ),
       ),
     );
   }
 }
-
-// ---------------- MAP SCREEN ----------------
 
 class MapScreen extends StatelessWidget {
   const MapScreen({super.key});
@@ -436,7 +508,6 @@ class MapScreen extends StatelessWidget {
 
 class _MapLabel {
   const _MapLabel(this.text, this.fx, this.fy, [this.size = 12.0]);
-
   final String text;
   final double fx;
   final double fy;
@@ -499,23 +570,71 @@ class _MapLandPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ---------------- CITY LIST ----------------
+class CityListScreen extends StatefulWidget {
+  const CityListScreen({super.key, required this.database});
 
-class CityListScreen extends StatelessWidget {
-  const CityListScreen({super.key});
+  final AppDatabase database;
 
-  static const _cities = <(String name, String temp)>[
-    ('Москва', '-24°'),
-    ('Красноярск', '-30°'),
-    ('Екатеринбург', '-26°'),
-    ('Новосибирск', '-28°'),
-    ('Иркутск', '-25°'),
-    ('Омск', '-19°'),
-    ('Санкт-Петербург', '-14°'),
-    ('Калининград', '-10°'),
-  ];
+  @override
+  State<CityListScreen> createState() => _CityListScreenState();
+}
 
+class _CityListScreenState extends State<CityListScreen> {
   static const _navClearance = 96.0;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  List<MasterCity> _searchResults = const [];
+  bool _isSearching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSearchResults('');
+    _searchController.addListener(() {
+      _loadSearchResults(_searchController.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSearchResults(String query) async {
+    setState(() {
+      _isSearching = true;
+    });
+    final result = await widget.database.searchMasterCities(query);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _searchResults = result;
+      _isSearching = false;
+    });
+  }
+
+  Future<void> _addCity(MasterCity city) async {
+    await widget.database.addUserCity(city.id);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${city.name} добавлен в ваш список')),
+    );
+  }
+
+  Future<void> _removeCity(UserCityWithName city) async {
+    await widget.database.removeUserCity(city.userCityId);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${city.name} удален из вашего списка')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -531,10 +650,7 @@ class CityListScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    height: 1,
-                    color: AppColors.searchText.withValues(alpha: 0.35),
-                  ),
+                  Container(height: 1, color: AppColors.searchText.withValues(alpha: 0.35)),
                   const SizedBox(height: 10),
                   Text(
                     'Поиск города',
@@ -544,53 +660,160 @@ class CityListScreen extends StatelessWidget {
                       color: AppColors.searchText.withValues(alpha: 0.9),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.search,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onTapOutside: (_) => _searchFocusNode.unfocus(),
+                    decoration: InputDecoration(
+                      hintText: 'Введите название...',
+                      hintStyle: TextStyle(color: AppColors.searchText.withValues(alpha: 0.7)),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.3),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: const Icon(Icons.search),
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            StreamBuilder<List<UserCityWithName>>(
+              stream: widget.database.watchUserCities(),
+              builder: (context, selectedSnapshot) {
+                final selectedCityIds = (selectedSnapshot.data ?? const <UserCityWithName>[])
+                    .map((c) => c.masterCityId)
+                    .toSet();
+                return SizedBox(
+                  height: 145,
+                  child: _isSearching
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: _searchResults.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final city = _searchResults[index];
+                            final isAdded = selectedCityIds.contains(city.id);
+                            return Container(
+                              width: 180,
+                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(18),
+                                color: Colors.white.withValues(alpha: 0.25),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    city.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+                                  ),
+                                  const Spacer(),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: isAdded ? null : () => _addCity(city),
+                                      icon: Icon(isAdded ? Icons.check : Icons.add, size: 16),
+                                      label: Text(isAdded ? 'Добавлено' : 'Добавить'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Ваши города',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Expanded(
-              child: ListView.separated(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, _navClearance),
-                itemCount: _cities.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final city = _cities[index];
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        colors: [AppColors.cityCardBlueLeft, AppColors.cityCardBlueRight],
+              child: StreamBuilder<List<UserCityWithName>>(
+                stream: widget.database.watchUserCities(),
+                builder: (context, snapshot) {
+                  final userCities = snapshot.data ?? const <UserCityWithName>[];
+
+                  if (userCities.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, _navClearance),
+                      child: Center(
+                        child: Text(
+                          'Пока нет добавленных городов',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          city.$1,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
+                    );
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, _navClearance),
+                    itemCount: userCities.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final city = userCities[index];
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          gradient: const LinearGradient(
+                            colors: [AppColors.cityCardBlueLeft, AppColors.cityCardBlueRight],
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        Text(
-                          city.$2,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                city.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => _removeCity(city),
+                              icon: const Icon(Icons.delete_outline, color: Colors.white),
+                              tooltip: 'Удалить',
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   );
                 },
               ),
