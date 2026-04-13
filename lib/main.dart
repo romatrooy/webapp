@@ -636,6 +636,21 @@ class _CityListScreenState extends State<CityListScreen> {
     );
   }
 
+  Future<void> _reorderUserCities(
+    List<UserCityWithName> cities,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final reordered = List<UserCityWithName>.from(cities);
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    final orderedIds = reordered.map((c) => c.userCityId).toList();
+    await widget.database.reorderUserCities(orderedIds);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
@@ -772,45 +787,56 @@ class _CityListScreenState extends State<CityListScreen> {
                     );
                   }
 
-                  return ListView.separated(
+                  return ReorderableListView.builder(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, _navClearance),
                     itemCount: userCities.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    proxyDecorator: (child, _, __) => Material(
+                      color: Colors.transparent,
+                      child: child,
+                    ),
+                    onReorder: (oldIndex, newIndex) =>
+                        _reorderUserCities(userCities, oldIndex, newIndex),
                     itemBuilder: (context, index) {
                       final city = userCities[index];
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          gradient: const LinearGradient(
-                            colors: [AppColors.cityCardBlueLeft, AppColors.cityCardBlueRight],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
+                      return Padding(
+                        key: ValueKey(city.userCityId),
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            gradient: const LinearGradient(
+                              colors: [AppColors.cityCardBlueLeft, AppColors.cityCardBlueRight],
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                city.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.drag_indicator, color: Colors.white70),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  city.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            IconButton(
-                              onPressed: () => _removeCity(city),
-                              icon: const Icon(Icons.delete_outline, color: Colors.white),
-                              tooltip: 'Удалить',
-                            ),
-                          ],
+                              IconButton(
+                                onPressed: () => _removeCity(city),
+                                icon: const Icon(Icons.delete_outline, color: Colors.white),
+                                tooltip: 'Удалить',
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },

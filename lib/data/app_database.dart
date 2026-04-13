@@ -136,6 +136,16 @@ class AppDatabase extends _$AppDatabase {
       UserCitiesCompanion(sortOrder: Value(newSortOrder)),
     );
   }
+
+  Future<void> reorderUserCities(List<int> orderedUserCityIds) async {
+    await transaction(() async {
+      for (var i = 0; i < orderedUserCityIds.length; i++) {
+        await (update(userCities)..where((t) => t.id.equals(orderedUserCityIds[i]))).write(
+          UserCitiesCompanion(sortOrder: Value(i)),
+        );
+      }
+    });
+  }
 }
 
 LazyDatabase _openConnection() {
