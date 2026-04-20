@@ -60,7 +60,10 @@ class OpenWeatherService {
   OpenWeatherService({http.Client? client}) : _client = client ?? http.Client();
 
   static const String _apiKey = '0ac1c1e4ed8bd44594547f92684093de';
+  static const Duration _weatherTtl = Duration(minutes: 5);
   final http.Client _client;
+  final Map<String, _CachedWeather> _weatherCache = {};
+  final Map<String, Future<WeatherSnapshot>> _inFlightWeather = {};
 
   Future<List<ApiCity>> searchCities(String query) async {
     final trimmed = query.trim();
@@ -94,6 +97,32 @@ class OpenWeatherService {
   }
 
   Future<WeatherSnapshot> getWeather(double lat, double lon) async {
+    final cacheKey = _weatherKey(lat, lon);
+    final cached = _weatherCache[cacheKey];
+    if (cached != null && DateTime.now().isBefore(cached.expiresAt)) {
+      return cached.value;
+    }
+
+    final inFlight = _inFlightWeather[cacheKey];
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final future = _loadWeatherFromApi(lat, lon);
+    _inFlightWeather[cacheKey] = future;
+    try {
+      final weather = await future;
+      _weatherCache[cacheKey] = _CachedWeather(
+        value: weather,
+        expiresAt: DateTime.now().add(_weatherTtl),
+      );
+      return weather;
+    } finally {
+      _inFlightWeather.remove(cacheKey);
+    }
+  }
+
+  Future<WeatherSnapshot> _loadWeatherFromApi(double lat, double lon) async {
     final currentUri = Uri.https('api.openweathermap.org', '/data/2.5/weather', {
       'lat': lat.toString(),
       'lon': lon.toString(),
@@ -123,6 +152,9 @@ class OpenWeatherService {
       hourlyToday: hourlyToday,
     );
   }
+
+  String _weatherKey(double lat, double lon) =>
+      '${lat.toStringAsFixed(4)}_${lon.toStringAsFixed(4)}';
 
   Future<List<ForecastItem>> _loadDailyForecast(
     double lat,
@@ -261,4 +293,14 @@ class OpenWeatherService {
     const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
     return days[date.weekday - 1];
   }
+}
+
+class _CachedWeather {
+  const _CachedWeather({
+    required this.value,
+    required this.expiresAt,
+  });
+
+  final WeatherSnapshot value;
+  final DateTime expiresAt;
 }
