@@ -35,8 +35,43 @@ class $MasterCitiesTable extends MasterCities
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _countryCodeMeta = const VerificationMeta(
+    'countryCode',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name];
+  late final GeneratedColumn<String> countryCode = GeneratedColumn<String>(
+    'country_code',
+    aliasedName,
+    true,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 0,
+      maxTextLength: 8,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _latMeta = const VerificationMeta('lat');
+  @override
+  late final GeneratedColumn<double> lat = GeneratedColumn<double>(
+    'lat',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lonMeta = const VerificationMeta('lon');
+  @override
+  late final GeneratedColumn<double> lon = GeneratedColumn<double>(
+    'lon',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, countryCode, lat, lon];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -60,6 +95,27 @@ class $MasterCitiesTable extends MasterCities
     } else if (isInserting) {
       context.missing(_nameMeta);
     }
+    if (data.containsKey('country_code')) {
+      context.handle(
+        _countryCodeMeta,
+        countryCode.isAcceptableOrUnknown(
+          data['country_code']!,
+          _countryCodeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('lat')) {
+      context.handle(
+        _latMeta,
+        lat.isAcceptableOrUnknown(data['lat']!, _latMeta),
+      );
+    }
+    if (data.containsKey('lon')) {
+      context.handle(
+        _lonMeta,
+        lon.isAcceptableOrUnknown(data['lon']!, _lonMeta),
+      );
+    }
     return context;
   }
 
@@ -77,6 +133,18 @@ class $MasterCitiesTable extends MasterCities
         DriftSqlType.string,
         data['${effectivePrefix}name'],
       )!,
+      countryCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}country_code'],
+      ),
+      lat: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}lat'],
+      )!,
+      lon: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}lon'],
+      )!,
     );
   }
 
@@ -89,17 +157,39 @@ class $MasterCitiesTable extends MasterCities
 class MasterCity extends DataClass implements Insertable<MasterCity> {
   final int id;
   final String name;
-  const MasterCity({required this.id, required this.name});
+  final String? countryCode;
+  final double lat;
+  final double lon;
+  const MasterCity({
+    required this.id,
+    required this.name,
+    this.countryCode,
+    required this.lat,
+    required this.lon,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['name'] = Variable<String>(name);
+    if (!nullToAbsent || countryCode != null) {
+      map['country_code'] = Variable<String>(countryCode);
+    }
+    map['lat'] = Variable<double>(lat);
+    map['lon'] = Variable<double>(lon);
     return map;
   }
 
   MasterCitiesCompanion toCompanion(bool nullToAbsent) {
-    return MasterCitiesCompanion(id: Value(id), name: Value(name));
+    return MasterCitiesCompanion(
+      id: Value(id),
+      name: Value(name),
+      countryCode: countryCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(countryCode),
+      lat: Value(lat),
+      lon: Value(lon),
+    );
   }
 
   factory MasterCity.fromJson(
@@ -110,6 +200,9 @@ class MasterCity extends DataClass implements Insertable<MasterCity> {
     return MasterCity(
       id: serializer.fromJson<int>(json['id']),
       name: serializer.fromJson<String>(json['name']),
+      countryCode: serializer.fromJson<String?>(json['countryCode']),
+      lat: serializer.fromJson<double>(json['lat']),
+      lon: serializer.fromJson<double>(json['lon']),
     );
   }
   @override
@@ -118,15 +211,34 @@ class MasterCity extends DataClass implements Insertable<MasterCity> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'name': serializer.toJson<String>(name),
+      'countryCode': serializer.toJson<String?>(countryCode),
+      'lat': serializer.toJson<double>(lat),
+      'lon': serializer.toJson<double>(lon),
     };
   }
 
-  MasterCity copyWith({int? id, String? name}) =>
-      MasterCity(id: id ?? this.id, name: name ?? this.name);
+  MasterCity copyWith({
+    int? id,
+    String? name,
+    Value<String?> countryCode = const Value.absent(),
+    double? lat,
+    double? lon,
+  }) => MasterCity(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    countryCode: countryCode.present ? countryCode.value : this.countryCode,
+    lat: lat ?? this.lat,
+    lon: lon ?? this.lon,
+  );
   MasterCity copyWithCompanion(MasterCitiesCompanion data) {
     return MasterCity(
       id: data.id.present ? data.id.value : this.id,
       name: data.name.present ? data.name.value : this.name,
+      countryCode: data.countryCode.present
+          ? data.countryCode.value
+          : this.countryCode,
+      lat: data.lat.present ? data.lat.value : this.lat,
+      lon: data.lon.present ? data.lon.value : this.lon,
     );
   }
 
@@ -134,42 +246,77 @@ class MasterCity extends DataClass implements Insertable<MasterCity> {
   String toString() {
     return (StringBuffer('MasterCity(')
           ..write('id: $id, ')
-          ..write('name: $name')
+          ..write('name: $name, ')
+          ..write('countryCode: $countryCode, ')
+          ..write('lat: $lat, ')
+          ..write('lon: $lon')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name);
+  int get hashCode => Object.hash(id, name, countryCode, lat, lon);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MasterCity && other.id == this.id && other.name == this.name);
+      (other is MasterCity &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.countryCode == this.countryCode &&
+          other.lat == this.lat &&
+          other.lon == this.lon);
 }
 
 class MasterCitiesCompanion extends UpdateCompanion<MasterCity> {
   final Value<int> id;
   final Value<String> name;
+  final Value<String?> countryCode;
+  final Value<double> lat;
+  final Value<double> lon;
   const MasterCitiesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
+    this.countryCode = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lon = const Value.absent(),
   });
   MasterCitiesCompanion.insert({
     this.id = const Value.absent(),
     required String name,
+    this.countryCode = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lon = const Value.absent(),
   }) : name = Value(name);
   static Insertable<MasterCity> custom({
     Expression<int>? id,
     Expression<String>? name,
+    Expression<String>? countryCode,
+    Expression<double>? lat,
+    Expression<double>? lon,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (name != null) 'name': name,
+      if (countryCode != null) 'country_code': countryCode,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
     });
   }
 
-  MasterCitiesCompanion copyWith({Value<int>? id, Value<String>? name}) {
-    return MasterCitiesCompanion(id: id ?? this.id, name: name ?? this.name);
+  MasterCitiesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<String?>? countryCode,
+    Value<double>? lat,
+    Value<double>? lon,
+  }) {
+    return MasterCitiesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      countryCode: countryCode ?? this.countryCode,
+      lat: lat ?? this.lat,
+      lon: lon ?? this.lon,
+    );
   }
 
   @override
@@ -181,6 +328,15 @@ class MasterCitiesCompanion extends UpdateCompanion<MasterCity> {
     if (name.present) {
       map['name'] = Variable<String>(name.value);
     }
+    if (countryCode.present) {
+      map['country_code'] = Variable<String>(countryCode.value);
+    }
+    if (lat.present) {
+      map['lat'] = Variable<double>(lat.value);
+    }
+    if (lon.present) {
+      map['lon'] = Variable<double>(lon.value);
+    }
     return map;
   }
 
@@ -188,7 +344,10 @@ class MasterCitiesCompanion extends UpdateCompanion<MasterCity> {
   String toString() {
     return (StringBuffer('MasterCitiesCompanion(')
           ..write('id: $id, ')
-          ..write('name: $name')
+          ..write('name: $name, ')
+          ..write('countryCode: $countryCode, ')
+          ..write('lat: $lat, ')
+          ..write('lon: $lon')
           ..write(')'))
         .toString();
   }
@@ -521,9 +680,21 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 }
 
 typedef $$MasterCitiesTableCreateCompanionBuilder =
-    MasterCitiesCompanion Function({Value<int> id, required String name});
+    MasterCitiesCompanion Function({
+      Value<int> id,
+      required String name,
+      Value<String?> countryCode,
+      Value<double> lat,
+      Value<double> lon,
+    });
 typedef $$MasterCitiesTableUpdateCompanionBuilder =
-    MasterCitiesCompanion Function({Value<int> id, Value<String> name});
+    MasterCitiesCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<String?> countryCode,
+      Value<double> lat,
+      Value<double> lon,
+    });
 
 final class $$MasterCitiesTableReferences
     extends BaseReferences<_$AppDatabase, $MasterCitiesTable, MasterCity> {
@@ -567,6 +738,21 @@ class $$MasterCitiesTableFilterComposer
 
   ColumnFilters<String> get name => $composableBuilder(
     column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get countryCode => $composableBuilder(
+    column: $table.countryCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lat => $composableBuilder(
+    column: $table.lat,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lon => $composableBuilder(
+    column: $table.lon,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -614,6 +800,21 @@ class $$MasterCitiesTableOrderingComposer
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get countryCode => $composableBuilder(
+    column: $table.countryCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lat => $composableBuilder(
+    column: $table.lat,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lon => $composableBuilder(
+    column: $table.lon,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MasterCitiesTableAnnotationComposer
@@ -630,6 +831,17 @@ class $$MasterCitiesTableAnnotationComposer
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get countryCode => $composableBuilder(
+    column: $table.countryCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get lat =>
+      $composableBuilder(column: $table.lat, builder: (column) => column);
+
+  GeneratedColumn<double> get lon =>
+      $composableBuilder(column: $table.lon, builder: (column) => column);
 
   Expression<T> userCitiesRefs<T extends Object>(
     Expression<T> Function($$UserCitiesTableAnnotationComposer a) f,
@@ -687,10 +899,30 @@ class $$MasterCitiesTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> name = const Value.absent(),
-              }) => MasterCitiesCompanion(id: id, name: name),
+                Value<String?> countryCode = const Value.absent(),
+                Value<double> lat = const Value.absent(),
+                Value<double> lon = const Value.absent(),
+              }) => MasterCitiesCompanion(
+                id: id,
+                name: name,
+                countryCode: countryCode,
+                lat: lat,
+                lon: lon,
+              ),
           createCompanionCallback:
-              ({Value<int> id = const Value.absent(), required String name}) =>
-                  MasterCitiesCompanion.insert(id: id, name: name),
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                Value<String?> countryCode = const Value.absent(),
+                Value<double> lat = const Value.absent(),
+                Value<double> lon = const Value.absent(),
+              }) => MasterCitiesCompanion.insert(
+                id: id,
+                name: name,
+                countryCode: countryCode,
+                lat: lat,
+                lon: lon,
+              ),
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (

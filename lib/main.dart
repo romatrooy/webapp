@@ -1,7 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as latlng;
 import 'package:webapp/data/app_database.dart';
+import 'package:webapp/data/open_weather_service.dart';
+
+final OpenWeatherService _weatherService = OpenWeatherService();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -96,7 +99,7 @@ class _MainScreenState extends State<MainScreen> {
             child: IndexedStack(
               index: _currentIndex,
               children: [
-                const MapScreen(),
+                MapScreen(database: widget.database),
                 WeatherScreen(database: widget.database),
                 CityListScreen(database: widget.database),
               ],
@@ -237,8 +240,18 @@ class _WeatherScreenState extends State<WeatherScreen> {
             builder: (context, snapshot) {
               final selectedCities = snapshot.data ?? const <UserCityWithName>[];
               final cities = selectedCities.isEmpty
-                  ? const ['Москва']
-                  : selectedCities.map((c) => c.name).toList();
+                  ? const <UserCityWithName>[
+                      UserCityWithName(
+                        userCityId: -1,
+                        masterCityId: -1,
+                        name: 'Москва',
+                        countryCode: 'RU',
+                        lat: 55.7558,
+                        lon: 37.6173,
+                        sortOrder: 0,
+                      )
+                    ]
+                  : selectedCities;
               final tabsCount = cities.length;
               if (_currentCityPage >= tabsCount) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -265,7 +278,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    cities[_currentCityPage.clamp(0, tabsCount - 1)],
+                    cities[_currentCityPage.clamp(0, tabsCount - 1)].name,
                     style: const TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.bold,
@@ -273,14 +286,25 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    '-24°',
-                    style: TextStyle(
-                      fontSize: 64,
-                      fontWeight: FontWeight.w300,
-                      color: Colors.white,
-                      height: 1.05,
+                  FutureBuilder<WeatherSnapshot>(
+                    future: _weatherService.getWeather(
+                      cities[_currentCityPage.clamp(0, tabsCount - 1)].lat,
+                      cities[_currentCityPage.clamp(0, tabsCount - 1)].lon,
                     ),
+                    builder: (context, weatherSnapshot) {
+                      final temp = weatherSnapshot.hasData
+                          ? '${weatherSnapshot.data!.temperature.round()}°'
+                          : '--°';
+                      return Text(
+                        temp,
+                        style: const TextStyle(
+                          fontSize: 64,
+                          fontWeight: FontWeight.w300,
+                          color: Colors.white,
+                          height: 1.05,
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -293,6 +317,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
                         });
                       },
                       itemBuilder: (context, pageIndex) {
+                        final city = cities[pageIndex];
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Container(
@@ -325,9 +350,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
                                       ),
                                       const SizedBox(width: 10),
                                       Text(
-                                        'Прогноз на 10 дней',
+                                        'Прогноз на 6 дней',
                                         style: TextStyle(
-                                          fontSize: 16,
+                                          fontSize: 18,
                                           fontWeight: FontWeight.w600,
                                           color: Colors.white.withValues(alpha: 0.98),
                                         ),
@@ -341,61 +366,138 @@ class _WeatherScreenState extends State<WeatherScreen> {
                                   color: Colors.white.withValues(alpha: 0.22),
                                 ),
                                 Expanded(
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    itemCount: 10,
-                                    separatorBuilder: (_, __) => Divider(
-                                      height: 1,
-                                      thickness: 0.5,
-                                      color: Colors.white.withValues(alpha: 0.15),
-                                    ),
-                                    itemBuilder: (context, index) {
-                                      const days = [
-                                        'Сегодня',
-                                        'Пн',
-                                        'Вт',
-                                        'Ср',
-                                        'Чт',
-                                        'Пт',
-                                        'Сб',
-                                        'Вс',
-                                        'Пн',
-                                        'Вт',
-                                      ];
-                                      final icons = [
-                                        Icons.cloudy_snowing,
-                                        Icons.wb_cloudy_outlined,
-                                        Icons.wb_sunny_outlined,
-                                        Icons.ac_unit,
-                                        Icons.grain,
-                                        Icons.thunderstorm_outlined,
-                                        Icons.wb_cloudy_outlined,
-                                        Icons.wb_sunny_outlined,
-                                        Icons.cloudy_snowing,
-                                        Icons.wb_cloudy_outlined,
-                                      ];
-                                      return Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                        child: Row(
-                                          children: [
-                                            SizedBox(
-                                              width: 76,
-                                              child: Text(
-                                                days[index],
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
+                                  child: FutureBuilder<WeatherSnapshot>(
+                                    future: _weatherService.getWeather(city.lat, city.lon),
+                                    builder: (context, forecastSnapshot) {
+                                      final forecast = forecastSnapshot.data?.forecast ?? const <ForecastItem>[];
+                                      if (forecastSnapshot.connectionState == ConnectionState.waiting) {
+                                        return const Center(child: CircularProgressIndicator(color: Colors.white));
+                                      }
+                                      if (forecastSnapshot.hasError || forecast.isEmpty) {
+                                        return const Center(
+                                          child: Text(
+                                            'Не удалось загрузить прогноз',
+                                            style: TextStyle(color: Colors.white),
+                                          ),
+                                        );
+                                      }
+
+                                      final hourly = forecastSnapshot.data?.hourlyToday ?? const <HourlyForecastItem>[];
+                                      return Column(
+                                        children: [
+                                          Expanded(
+                                            child: ListView.separated(
+                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                              itemCount: forecast.length,
+                                              separatorBuilder: (_, __) => Divider(
+                                                height: 1,
+                                                thickness: 0.5,
+                                                color: Colors.white.withValues(alpha: 0.15),
+                                              ),
+                                              itemBuilder: (context, index) {
+                                                final item = forecast[index];
+                                                return Padding(
+                                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                                  child: Row(
+                                                    children: [
+                                                      SizedBox(
+                                                        width: 90,
+                                                        child: Text(
+                                                          item.label,
+                                                          style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 17,
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      Icon(_weatherIcon(item.icon), color: Colors.white, size: 24),
+                                                      const Spacer(),
+                                                      Text(
+                                                        '${item.maxTemp.round()}°/${item.minTemp.round()}°',
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 17,
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                          if (hourly.isNotEmpty) ...[
+                                            Divider(
+                                              height: 1,
+                                              thickness: 0.8,
+                                              color: Colors.white.withValues(alpha: 0.22),
+                                            ),
+                                            Padding(
+                                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.schedule,
+                                                    size: 18,
+                                                    color: Colors.white.withValues(alpha: 0.9),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Text(
+                                                    'Почасовой прогноз на сегодня',
+                                                    style: TextStyle(
+                                                      color: Colors.white.withValues(alpha: 0.95),
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
-                                            Icon(icons[index], color: Colors.white, size: 22),
-                                            const Spacer(),
-                                            const Text('-31°', style: TextStyle(color: Colors.white, fontSize: 15)),
-                                            const SizedBox(width: 16),
-                                            const Text('-22°', style: TextStyle(color: Colors.white, fontSize: 15)),
+                                            SizedBox(
+                                              height: 82,
+                                              child: ListView.separated(
+                                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                                                scrollDirection: Axis.horizontal,
+                                                itemCount: hourly.length,
+                                                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                                itemBuilder: (context, index) {
+                                                  final h = hourly[index];
+                                                  return Container(
+                                                    width: 70,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withValues(alpha: 0.14),
+                                                      borderRadius: BorderRadius.circular(12),
+                                                    ),
+                                                    padding: const EdgeInsets.symmetric(vertical: 6),
+                                                    child: Column(
+                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      children: [
+                                                        Text(
+                                                          h.timeLabel,
+                                                          style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                        Icon(_weatherIcon(h.icon), color: Colors.white, size: 16),
+                                                        Text(
+                                                          '${h.temp.round()}°',
+                                                          style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
                                           ],
-                                        ),
+                                        ],
                                       );
                                     },
                                   ),
@@ -436,139 +538,124 @@ class _WeatherScreenState extends State<WeatherScreen> {
   }
 }
 
+IconData _weatherIcon(String code) {
+  if (code.startsWith('01')) return Icons.wb_sunny_outlined;
+  if (code.startsWith('02') || code.startsWith('03') || code.startsWith('04')) {
+    return Icons.wb_cloudy_outlined;
+  }
+  if (code.startsWith('09') || code.startsWith('10')) return Icons.grain;
+  if (code.startsWith('11')) return Icons.thunderstorm_outlined;
+  if (code.startsWith('13')) return Icons.cloudy_snowing;
+  return Icons.cloud_queue_outlined;
+}
+
 class MapScreen extends StatelessWidget {
-  const MapScreen({super.key});
+  const MapScreen({super.key, required this.database});
+
+  final AppDatabase database;
 
   static const _navClearance = 100.0;
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: AppColors.turquoiseBg,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, _navClearance),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(36),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                final h = constraints.maxHeight;
-                return Stack(
-                  fit: StackFit.expand,
+    return StreamBuilder<List<UserCityWithName>>(
+      stream: database.watchUserCities(),
+      builder: (context, snapshot) {
+        final cities = snapshot.data ?? const <UserCityWithName>[];
+        final center = cities.isNotEmpty
+            ? latlng.LatLng(cities.first.lat, cities.first.lon)
+            : const latlng.LatLng(55.7558, 37.6173);
+
+        return ColoredBox(
+          color: AppColors.turquoiseBg,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, _navClearance),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(36),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: 5.6,
+                  ),
                   children: [
-                    const _StylizedMapBackground(),
-                    ..._mapLabels.map(
-                      (l) => Positioned(
-                        left: w * l.fx,
-                        top: h * l.fy,
-                        child: Text(
-                          l.text,
-                          style: TextStyle(
-                            fontSize: l.size,
-                            color: const Color(0xFF2D4A3E).withValues(alpha: 0.75),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.webapp',
                     ),
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(22),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            color: Colors.white.withValues(alpha: 0.28),
-                            child: const Text(
-                              'Москва -24°',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
+                    MarkerLayer(
+                      markers: cities
+                          .map(
+                            (city) => Marker(
+                              width: 136,
+                              height: 56,
+                              point: latlng.LatLng(city.lat, city.lon),
+                              child: FutureBuilder<WeatherSnapshot>(
+                                future: _weatherService.getWeather(city.lat, city.lon),
+                                builder: (context, weatherSnapshot) {
+                                  final tempText = weatherSnapshot.hasData
+                                      ? '${weatherSnapshot.data!.temperature.round()}°'
+                                      : '--°';
+                                  return Container(
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.15),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              city.name,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            tempText,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                          ),
-                        ),
-                      ),
+                          )
+                          .toList(),
                     ),
                   ],
-                );
-              },
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-class _MapLabel {
-  const _MapLabel(this.text, this.fx, this.fy, [this.size = 12.0]);
-  final String text;
-  final double fx;
-  final double fy;
-  final double size;
-}
-
-const _mapLabels = <_MapLabel>[
-  _MapLabel('Москва', 0.38, 0.42, 14),
-  _MapLabel('Химки', 0.32, 0.38),
-  _MapLabel('Тверь', 0.22, 0.28),
-  _MapLabel('Тула', 0.35, 0.58),
-  _MapLabel('Рязань', 0.48, 0.62),
-  _MapLabel('Владимир', 0.55, 0.35),
-];
-
-class _StylizedMapBackground extends StatelessWidget {
-  const _StylizedMapBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFB8E8C8),
-      child: CustomPaint(
-        painter: _MapLandPainter(),
-        child: SizedBox.expand(),
-      ),
-    );
-  }
-}
-
-class _MapLandPainter extends CustomPainter {
-  const _MapLandPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final water = Paint()..color = const Color(0xFF9FD4E8);
-    canvas.drawRect(Offset.zero & size, water);
-
-    final land = Paint()..color = const Color(0xFFC4EFD4);
-    final path = Path()
-      ..moveTo(0, size.height * 0.15)
-      ..quadraticBezierTo(size.width * 0.35, size.height * 0.05, size.width * 0.55, size.height * 0.2)
-      ..quadraticBezierTo(size.width * 0.95, size.height * 0.35, size.width * 0.88, size.height * 0.55)
-      ..quadraticBezierTo(size.width * 0.75, size.height * 0.85, size.width * 0.4, size.height * 0.92)
-      ..quadraticBezierTo(size.width * 0.1, size.height * 0.88, 0, size.height * 0.65)
-      ..close();
-    canvas.drawPath(path, land);
-
-    final land2 = Paint()..color = const Color(0xFFB5E6C8);
-    final path2 = Path()
-      ..moveTo(size.width * 0.6, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width, size.height * 0.45)
-      ..quadraticBezierTo(size.width * 0.72, size.height * 0.25, size.width * 0.6, 0)
-      ..close();
-    canvas.drawPath(path2, land2);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
 
 class CityListScreen extends StatefulWidget {
   const CityListScreen({super.key, required this.database});
@@ -583,7 +670,7 @@ class _CityListScreenState extends State<CityListScreen> {
   static const _navClearance = 96.0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  List<MasterCity> _searchResults = const [];
+  List<ApiCity> _searchResults = const [];
   bool _isSearching = false;
 
   @override
@@ -606,7 +693,16 @@ class _CityListScreenState extends State<CityListScreen> {
     setState(() {
       _isSearching = true;
     });
-    final result = await widget.database.searchMasterCities(query);
+    List<ApiCity> result = const [];
+    try {
+      result = await _weatherService.searchCities(query);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось загрузить города из OpenWeatherMap')),
+        );
+      }
+    }
     if (!mounted) {
       return;
     }
@@ -616,8 +712,14 @@ class _CityListScreenState extends State<CityListScreen> {
     });
   }
 
-  Future<void> _addCity(MasterCity city) async {
-    await widget.database.addUserCity(city.id);
+  Future<void> _addCity(ApiCity city) async {
+    final master = await widget.database.upsertMasterCity(
+      name: city.name,
+      countryCode: city.countryCode,
+      lat: city.lat,
+      lon: city.lon,
+    );
+    await widget.database.addUserCity(master.id);
     if (!mounted) {
       return;
     }
@@ -704,8 +806,8 @@ class _CityListScreenState extends State<CityListScreen> {
             StreamBuilder<List<UserCityWithName>>(
               stream: widget.database.watchUserCities(),
               builder: (context, selectedSnapshot) {
-                final selectedCityIds = (selectedSnapshot.data ?? const <UserCityWithName>[])
-                    .map((c) => c.masterCityId)
+                final selectedCityKeys = (selectedSnapshot.data ?? const <UserCityWithName>[])
+                    .map((c) => '${c.name.toLowerCase()}_${c.lat}_${c.lon}')
                     .toSet();
                 return SizedBox(
                   height: 145,
@@ -718,7 +820,8 @@ class _CityListScreenState extends State<CityListScreen> {
                           separatorBuilder: (_, __) => const SizedBox(width: 10),
                           itemBuilder: (context, index) {
                             final city = _searchResults[index];
-                            final isAdded = selectedCityIds.contains(city.id);
+                            final cityKey = '${city.name.toLowerCase()}_${city.lat}_${city.lon}';
+                            final isAdded = selectedCityKeys.contains(cityKey);
                             return Container(
                               width: 180,
                               padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -730,7 +833,7 @@ class _CityListScreenState extends State<CityListScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    city.name,
+                                    '${city.name}, ${city.countryCode}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
